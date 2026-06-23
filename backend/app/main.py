@@ -1,13 +1,12 @@
 """
-FastAPI application entry point.
+FastAPI application entry point — Phase 2 update.
 
-The lifespan context manager handles startup and shutdown:
-- Startup: initialize Redis client, store on app.state so all routes can access it
-- Shutdown: close Redis connection cleanly
+Startup now initializes three shared resources:
+  - Redis client        (Phase 1)
+  - ChromaDB client     (Phase 2) — one shared HTTP connection to ChromaDB container
+  - Embedding model     (Phase 2) — loads all-MiniLM-L6-v2 into RAM once (~2s, ~80MB)
 
-Why app.state.redis instead of a module-level global:
-Module-level async clients can cause issues with event loop lifetime in tests.
-app.state is the FastAPI-idiomatic way to share resources across requests.
+The model download happens on first boot. Subsequent boots use the Docker volume cache.
 """
 from contextlib import asynccontextmanager
 
@@ -16,30 +15,28 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth
+from app.routers import auth, files
+from app.services.chroma import load_chroma_client
+from app.services.embedding import load_embedding_model
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize shared resources on startup, clean up on shutdown."""
-    # Startup
-    app.state.redis = aioredis.from_url(
-        settings.REDIS_URL,
-        decode_responses=True,  # Return strings, not bytes
-    )
+    """Initialize all shared resources on startup. Clean up on shutdown."""
+    app.state.redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    load_chroma_client()
+    load_embedding_model()
     yield
-    # Shutdown
     await app.state.redis.aclose()
 
 
 app = FastAPI(
     title="SecAi",
     description="Private local AI assistant with RAG pipeline",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
-# CORS — open for local development, lock this down if ever deployed
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,9 +46,16 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(files.router, prefix="/api/files", tags=["files"])
 
 
 @app.get("/health")
 async def health() -> dict:
-    """Health check — confirms the server is running."""
-    return {"status": "ok"}
+    """Health check — verifies ChromaDB is reachable in addition to the server being up."""
+    from app.services.chroma import get_chroma_client
+    try:
+        get_chroma_client().heartbeat()
+        chroma_status = "ok"
+    except Exception as e:
+        chroma_status = f"error: {e}"
+    return {"status": "ok", "chromadb": chroma_status}

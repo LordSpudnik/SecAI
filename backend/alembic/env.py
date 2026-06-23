@@ -22,7 +22,7 @@ from app.core.database import Base
 
 # Import every model module here — Alembic needs them registered on Base.metadata
 # to detect table changes during autogenerate
-from app.models import user  # noqa: F401
+from app.models import user, documents  # noqa: F401
 
 config = context.config
 
