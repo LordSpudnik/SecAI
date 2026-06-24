@@ -110,7 +110,7 @@ async def upload_file(
         document_id=document_id,
         file_path=str(file_path),
         file_type=file_type.value,
-        filename=doc.filename,
+        filename=doc.original_filename,
         user_id=current_user.id,
     )
 

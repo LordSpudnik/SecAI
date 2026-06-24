@@ -1,12 +1,16 @@
 """
-FastAPI application entry point — Phase 2 update.
+FastAPI application entry point — Phase 3 update.
 
-Startup now initializes three shared resources:
-  - Redis client        (Phase 1)
-  - ChromaDB client     (Phase 2) — one shared HTTP connection to ChromaDB container
-  - Embedding model     (Phase 2) — loads all-MiniLM-L6-v2 into RAM once (~2s, ~80MB)
+Startup initializes:
+  - Redis client        (Phase 1) — token blacklist
+  - ChromaDB client     (Phase 2) — vector search
+  - Embedding model     (Phase 2) — all-MiniLM-L6-v2, loaded once into RAM
+  - Ollama              (Phase 3) — no pre-load needed, ChatOllama connects on first call
 
-The model download happens on first boot. Subsequent boots use the Docker volume cache.
+Routers:
+  /api/auth   — register, login, logout, /me
+  /api/files  — upload, list, get, delete documents
+  /api/chat   — threads CRUD, send message, SSE stream
 """
 from contextlib import asynccontextmanager
 
@@ -16,13 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import auth, files
+from app.routers import chat
 from app.services.chroma import load_chroma_client
 from app.services.embedding import load_embedding_model
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize all shared resources on startup. Clean up on shutdown."""
     app.state.redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     load_chroma_client()
     load_embedding_model()
@@ -31,9 +35,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SecAi",
+    title="SecAI",
     description="Private local AI assistant with RAG pipeline",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -47,15 +51,20 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 
 @app.get("/health")
 async def health() -> dict:
-    """Health check — verifies ChromaDB is reachable in addition to the server being up."""
     from app.services.chroma import get_chroma_client
     try:
         get_chroma_client().heartbeat()
         chroma_status = "ok"
     except Exception as e:
         chroma_status = f"error: {e}"
-    return {"status": "ok", "chromadb": chroma_status}
+    return {
+        "status": "ok",
+        "chromadb": chroma_status,
+        "ollama_host": settings.OLLAMA_HOST,
+        "ollama_model": settings.OLLAMA_MODEL,
+    }
