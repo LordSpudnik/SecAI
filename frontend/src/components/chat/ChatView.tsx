@@ -1,14 +1,25 @@
 import { useEffect, useRef } from 'react'
 import { useChatStore } from '../../store/chatStore'
+import { Message } from '../../types/chat'
 import MessageBubble from './MessageBubble'
 import StreamingBubble from './StreamingBubble'
 import MessageInput from './MessageInput'
 
 interface Props { threadId: string }
 
+// Stable reference returned when a thread has no messages yet.
+// Do NOT replace this with an inline `[]` inside the selector below.
+// A new `[]` created on every render is treated by Zustand/React as
+// "the state changed" (different array reference in memory), which
+// forces another render, which creates another new `[]` — forever.
+// That's the "Maximum update depth exceeded" / "getSnapshot should be
+// cached" crash. Using one shared constant means the same reference
+// is returned every time, so React correctly sees "nothing changed".
+const EMPTY_MESSAGES: Message[] = []
+
 export default function ChatView({ threadId }: Props) {
   const threads = useChatStore((s) => s.threads)
-  const messages = useChatStore((s) => s.messages[threadId] ?? [])
+  const messages = useChatStore((s) => s.messages[threadId] ?? EMPTY_MESSAGES)
   const streaming = useChatStore((s) => s.streaming)
   const bottomRef = useRef<HTMLDivElement>(null)
 
