@@ -103,11 +103,13 @@ def _extract_text(file_path: str, file_type: str) -> str:
 # ─── Stage 3: Chunking ────────────────────────────────────────────────────────
 
 def _chunk_text(text: str) -> list[str]:
-    chunk_size = 800
-    chunk_overlap = 100
+    chunk_size = 500
+    chunk_overlap = 50
+    min_chunk_size = 100  # Discard fragments shorter than this
 
     if len(text) <= chunk_size:
-        return [text.strip()] if text.strip() else []
+        stripped = text.strip()
+        return [stripped] if len(stripped) >= min_chunk_size else []
 
     chunks: list[str] = []
     start = 0
@@ -115,13 +117,20 @@ def _chunk_text(text: str) -> list[str]:
     while start < len(text):
         end = min(start + chunk_size, len(text))
         if end < len(text):
+            # Critical: only search for a separator after accumulating at least
+            # half the chunk size (split_floor). The original code searched from
+            # start+chunk_overlap (~50 chars in), which caused rfind to find the
+            # first \n\n in the document immediately — producing 50-char fragments
+            # and advancing start by only ~2 chars per iteration. A 3KB document
+            # ended up as 65 micro-chunks instead of ~6 meaningful ones.
+            split_floor = start + (chunk_size // 2)
             for separator in ["\n\n", "\n", ". ", " "]:
-                pos = text.rfind(separator, start + chunk_overlap, end)
+                pos = text.rfind(separator, split_floor, end)
                 if pos != -1:
                     end = pos + len(separator)
                     break
         chunk = text[start:end].strip()
-        if chunk:
+        if len(chunk) >= min_chunk_size:
             chunks.append(chunk)
         next_start = end - chunk_overlap
         start = next_start if next_start > start else start + 1

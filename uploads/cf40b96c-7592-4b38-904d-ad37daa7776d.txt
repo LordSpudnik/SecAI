@@ -1,4 +1,0 @@
-This document is about machine learning. 
-Neural networks are a type of machine learning model.
-Deep learning uses multiple layers of neural networks.
-The transformer architecture revolutionized NLP in 2017.
