@@ -8,12 +8,21 @@ export interface StreamingState {
   isStreaming: boolean
 }
 
-interface ChatState {
+interface ChatDataState {
   threads: Thread[]
   activeThreadId: string | null
   messages: Record<string, Message[]>
   streaming: StreamingState | null
+}
 
+const initialState: ChatDataState = {
+  threads: [],
+  activeThreadId: null,
+  messages: {},
+  streaming: null,
+}
+
+interface ChatState extends ChatDataState {
   setThreads: (threads: Thread[]) => void
   addThread: (thread: Thread) => void
   updateThread: (thread: Thread) => void
@@ -28,13 +37,19 @@ interface ChatState {
   setSources: (threadId: string, sources: Source[]) => void
   finalizeStream: (threadId: string, messageId: string) => void
   cancelStream: () => void
+
+  /**
+   * Wipes all chat data back to initial state.
+   * MUST be called on logout. This store is a module-level singleton that
+   * lives outside React's component tree — unmounting ChatPage does NOT
+   * clear it. Without this, the next account to log in inherits the
+   * previous account's open thread and cached messages.
+   */
+  reset: () => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  threads: [],
-  activeThreadId: null,
-  messages: {},
-  streaming: null,
+  ...initialState,
 
   setThreads: (threads) => set({ threads }),
 
@@ -102,4 +117,6 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   cancelStream: () => set({ streaming: null }),
+
+  reset: () => set({ ...initialState }),
 }))
